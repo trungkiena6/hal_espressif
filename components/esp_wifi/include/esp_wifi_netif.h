@@ -6,6 +6,12 @@
 
 #pragma once
 
+#include <stdint.h>
+#include <stdbool.h>
+#include "esp_err.h"
+#include "esp_wifi_types.h"
+#include "esp_netif_types.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif

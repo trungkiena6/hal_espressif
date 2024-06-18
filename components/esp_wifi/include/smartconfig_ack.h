@@ -15,6 +15,10 @@
 #ifndef SMARTCONFIG_ACK_H
 #define SMARTCONFIG_ACK_H
 
+#include "esp_smartconfig.h"
+#include "esp_err.h"
+#include <stdint.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif

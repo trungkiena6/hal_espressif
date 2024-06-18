@@ -63,11 +63,13 @@ typedef enum {
     WIFI_AUTH_WPA_PSK,          /**< authenticate mode : WPA_PSK */
     WIFI_AUTH_WPA2_PSK,         /**< authenticate mode : WPA2_PSK */
     WIFI_AUTH_WPA_WPA2_PSK,     /**< authenticate mode : WPA_WPA2_PSK */
-    WIFI_AUTH_WPA2_ENTERPRISE,  /**< authenticate mode : WPA2_ENTERPRISE */
+    WIFI_AUTH_ENTERPRISE,       /**< authenticate mode : WiFi EAP security */
+    WIFI_AUTH_WPA2_ENTERPRISE = WIFI_AUTH_ENTERPRISE,  /**< authenticate mode : WiFi EAP security */
     WIFI_AUTH_WPA3_PSK,         /**< authenticate mode : WPA3_PSK */
     WIFI_AUTH_WPA2_WPA3_PSK,    /**< authenticate mode : WPA2_WPA3_PSK */
     WIFI_AUTH_WAPI_PSK,         /**< authenticate mode : WAPI_PSK */
     WIFI_AUTH_OWE,              /**< authenticate mode : OWE */
+    WIFI_AUTH_WPA3_ENT_192,     /**< authenticate mode : WPA3_ENT_SUITE_B_192_BIT */
     WIFI_AUTH_MAX
 } wifi_auth_mode_t;
 
@@ -558,6 +560,7 @@ typedef struct {
     bool channel_filter_en; /**< enable to turn on channel filter to smooth adjacent sub-carrier. Disable it to keep independence of adjacent sub-carrier. Default enabled */
     bool manu_scale;        /**< manually scale the CSI data by left shifting or automatically scale the CSI data. If set true, please set the shift bits. false: automatically. true: manually. Default false */
     uint8_t shift;          /**< manually left shift bits of the scale of the CSI data. The range of the left shift bits is 0~15 */
+    bool dump_ack_en;       /**< enable to dump 802.11 ACK frame, default disabled */
 } wifi_csi_config_t;
 #endif
 
@@ -569,9 +572,12 @@ typedef struct {
     wifi_pkt_rx_ctrl_t rx_ctrl;/**< received packet radio metadata header of the CSI data */
     uint8_t mac[6];            /**< source MAC address of the CSI data */
     uint8_t dmac[6];           /**< destination MAC address of the CSI data */
-    bool first_word_invalid;   /**< first four bytes of the CSI data is invalid or not */
-    int8_t *buf;               /**< buffer of CSI data */
-    uint16_t len;              /**< length of CSI data */
+    bool first_word_invalid;   /**< first four bytes of the CSI data is invalid or not, true indicates the first four bytes is invalid due to hardware limition */
+    int8_t *buf;               /**< valid buffer of CSI data */
+    uint16_t len;              /**< valid length of CSI data */
+    uint8_t *hdr;              /**< header of the wifi packet */
+    uint8_t *payload;          /**< payload of the wifi packet */
+    uint16_t payload_len;      /**< payload len of the wifi packet */
 } wifi_csi_info_t;
 
 /**
@@ -648,7 +654,9 @@ typedef struct {
     uint8_t resp_mac[6];        /**< MAC address of the FTM Responder */
     uint8_t channel;            /**< Primary channel of the FTM Responder */
     uint8_t frm_count;          /**< No. of FTM frames requested in terms of 4 or 8 bursts (allowed values - 0(No pref), 16, 24, 32, 64) */
-    uint16_t burst_period;      /**< Requested time period between consecutive FTM bursts in 100's of milliseconds (0 - No pref) */
+    uint16_t burst_period;      /**< Requested period between FTM bursts in 100's of milliseconds (allowed values 0(No pref) - 100) */
+    bool use_get_report_api;    /**< True - Using esp_wifi_ftm_get_report to get FTM report, False - Using ftm_report_data from
+                                     WIFI_EVENT_FTM_REPORT to get FTM report */
 } wifi_ftm_initiator_cfg_t;
 
 /**
@@ -993,6 +1001,8 @@ typedef enum {
     FTM_STATUS_CONF_REJECTED,   /**< Peer rejected FTM configuration in FTM Request */
     FTM_STATUS_NO_RESPONSE,     /**< Peer did not respond to FTM Requests */
     FTM_STATUS_FAIL,            /**< Unknown error during FTM exchange */
+    FTM_STATUS_NO_VALID_MSMT,   /**< FTM session did not result in any valid measurements */
+    FTM_STATUS_USER_TERM,       /**< User triggered termination */
 } wifi_ftm_status_t;
 
 /** Argument structure for */

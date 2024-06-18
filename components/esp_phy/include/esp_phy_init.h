@@ -28,6 +28,15 @@ typedef struct {
 } esp_phy_init_data_t;
 
 /**
+ * @brief PHY enable or disable modem
+ */
+typedef enum {
+    PHY_MODEM_WIFI       = 1,       /*!< PHY modem WIFI       */
+    PHY_MODEM_BT         = 2,       /*!< PHY modem BT         */
+    PHY_MODEM_IEEE802154 = 4,       /*!< PHY modem IEEE802154 */
+} esp_phy_modem_t;
+
+/**
  * @brief Opaque PHY calibration data
  */
 typedef struct {
@@ -146,7 +155,7 @@ esp_err_t esp_phy_erase_cal_data_in_nvs(void);
  * call this API in their application.
  *
  */
-void esp_phy_enable(void);
+void esp_phy_enable(esp_phy_modem_t modem);
 
 /**
  * @brief Disable PHY and RF module
@@ -156,7 +165,7 @@ void esp_phy_enable(void);
  * call this API in their application.
  *
  */
-void esp_phy_disable(void);
+void esp_phy_disable(esp_phy_modem_t modem);
 
 /**
  * @brief Enable BTBB module
@@ -263,13 +272,14 @@ char * get_phy_version_str(void);
  * @brief Enable phy track pll
  *
  */
-void phy_track_pll_init(void);
+void phy_init_param_set(uint8_t param);
 
 /**
  * @brief Disable phy track pll
  *
  */
-void phy_track_pll_deinit(void);
+void phy_wifi_enable_set(uint8_t enable);
+
 #ifdef __cplusplus
 }
 #endif
