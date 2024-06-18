@@ -1116,7 +1116,7 @@ typedef struct lp_uart_dev_t {
     volatile lp_uart_id_reg_t id;
 } lp_uart_dev_t;
 
-extern lp_uart_dev_t LP_UART;
+// extern lp_uart_dev_t LP_UART;
 
 #ifndef __cplusplus
 _Static_assert(sizeof(lp_uart_dev_t) == 0xa0, "Invalid size of lp_uart_dev_t structure");
