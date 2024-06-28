@@ -26,8 +26,8 @@
 #define CONDITIONAL_RWX         RWX
 #endif
 
-#define ALIGN_UP_TO_MMU_PAGE_SIZE(addr) (((addr) + (SOC_MMU_PAGE_SIZE) - 1) & ~((SOC_MMU_PAGE_SIZE) - 1))
-#define ALIGN_DOWN_TO_MMU_PAGE_SIZE(addr)  ((addr) & ~((SOC_MMU_PAGE_SIZE) - 1))
+#define ALIGN_UP_TO_MMU_PAGE_SIZE(addr) (((addr) + (CONFIG_MMU_PAGE_SIZE) - 1) & ~((CONFIG_MMU_PAGE_SIZE) - 1))
+#define ALIGN_DOWN_TO_MMU_PAGE_SIZE(addr)  ((addr) & ~((CONFIG_MMU_PAGE_SIZE) - 1))
 
 static void esp_cpu_configure_invalid_regions(void)
 {

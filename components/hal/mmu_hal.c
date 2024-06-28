@@ -17,7 +17,7 @@
 
 void mmu_hal_init(void)
 {
-#if ESP_ROM_RAM_APP_NEEDS_MMU_INIT
+#if CONFIG_ESP_ROM_RAM_APP_NEEDS_MMU_INIT
     ROM_Boot_Cache_Init();
 #endif
     mmu_ll_set_page_size(0, CONFIG_MMU_PAGE_SIZE);

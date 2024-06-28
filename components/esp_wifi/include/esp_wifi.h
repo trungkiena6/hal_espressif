@@ -259,7 +259,7 @@ extern uint64_t g_wifi_feature_caps;
     .static_tx_buf_num = WIFI_STATIC_TX_BUFFER_NUM,\
     .dynamic_tx_buf_num = WIFI_DYNAMIC_TX_BUFFER_NUM,\
     .rx_mgmt_buf_type = 1,\
-    .rx_mgmt_buf_num = 5,\
+    .rx_mgmt_buf_num = 10,\
     .cache_tx_buf_num = WIFI_CACHE_TX_BUFFER_NUM,\
     .csi_enable = WIFI_CSI_ENABLED,\
     .ampdu_rx_enable = WIFI_AMPDU_RX_ENABLED,\

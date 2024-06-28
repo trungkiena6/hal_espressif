@@ -11,6 +11,7 @@
 #include "esp_err.h"
 #include "esp_timer.h"
 #include "esp_attr.h"
+// #include "esp_intr_alloc.h"
 #include "esp_log.h"
 #include "esp_compiler.h"
 #include "soc/periph_defs.h"
@@ -22,7 +23,7 @@
 #include "hal/systimer_types.h"
 #include "hal/systimer_hal.h"
 
-#ifdef CONFIG_SOC_SERIES_ESP32C3
+#if defined(CONFIG_SOC_SERIES_ESP32C3) || defined(CONFIG_SOC_SERIES_ESP32C6)
 #include <zephyr/drivers/interrupt_controller/intc_esp32c3.h>
 #define ISR_HANDLER isr_handler_t
 #else
@@ -155,6 +156,8 @@ esp_err_t esp_timer_impl_early_init(void)
 esp_err_t esp_timer_impl_init(intr_handler_t alarm_handler)
 {
     int isr_flags = ((1 << 1) & ESP_INTR_FLAG_LEVELMASK)
+    // int isr_flags = ESP_INTR_FLAG_INTRDISABLED
+    //                 | ((1 << 1) & ESP_INTR_FLAG_LEVELMASK)
 #if !SOC_SYSTIMER_INT_LEVEL
                     | ESP_INTR_FLAG_EDGE
 #endif
@@ -176,6 +179,11 @@ esp_err_t esp_timer_impl_init(intr_handler_t alarm_handler)
         systimer_hal_enable_alarm_int(&systimer_hal, SYSTIMER_ALARM_ESPTIMER);
     }
 
+    // err = esp_intr_enable(ETS_SYSTIMER_TARGET2_EDGE_INTR_SOURCE);
+    // if (err != ESP_OK) {
+    //     ESP_EARLY_LOGE(TAG, "Can not enable ISR (0x%0x)", err);
+    // }
+
     return err;
 }
 
@@ -185,11 +193,6 @@ void esp_timer_impl_deinit(void)
     /* TODO: may need a spinlock, see the note related to SYSTIMER_INT_ENA_REG in systimer_hal_init */
     systimer_ll_enable_alarm_int(systimer_hal.dev, SYSTIMER_ALARM_ESPTIMER, false);
     s_alarm_handler = NULL;
-}
-
-uint64_t IRAM_ATTR esp_timer_impl_get_min_period_us(void)
-{
-    return 50;
 }
 
 uint64_t esp_timer_impl_get_alarm_reg(void)

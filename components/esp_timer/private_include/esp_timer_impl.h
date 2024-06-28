@@ -143,3 +143,12 @@ uint64_t esp_timer_impl_get_alarm_reg(void);
  */
 void esp_timer_impl_init_system_time(void);
 #endif
+
+#if CONFIG_ESP_TIMER_SUPPORTS_ISR_DISPATCH_METHOD
+/**
+ * @brief Set the next alarm if there is such an alarm in the cached array.
+ *
+ * @note Available only when CONFIG_ESP_TIMER_SUPPORTS_ISR_DISPATCH_METHOD is enabled.
+ */
+void esp_timer_impl_try_to_set_next_alarm(void);
+#endif

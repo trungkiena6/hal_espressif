@@ -452,8 +452,10 @@ void esp_mac_bb_pd_mem_deinit(void)
     }
     k_mutex_unlock(&s_phy_access_lock);
 #elif SOC_PM_MODEM_RETENTION_BY_REGDMA
+    k_mutex_lock(&s_phy_access_lock, K_FOREVER);
     sleep_retention_entries_destroy(SLEEP_RETENTION_MODULE_WIFI_BB);
-	s_mac_bb_tx_base = NULL;
+    s_mac_bb_tx_base = NULL;
+    k_mutex_unlock(&s_phy_access_lock);
 #endif
 }
 

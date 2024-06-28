@@ -35,6 +35,26 @@ esp_err_t spi_flash_chip_mxic_probe(esp_flash_t *chip, uint32_t flash_id)
     return ESP_OK;
 }
 
+esp_err_t spi_flash_chip_mxic_detect_size(esp_flash_t *chip, uint32_t *size)
+{
+    uint32_t id = chip->chip_id;
+    *size = 0;
+
+    /* Can't detect size unless the high byte of the product ID matches the same convention, which is usually 0x40 or
+     * 0xC0 or similar. */
+    if (((id & 0xFFFF) == 0x0000) || ((id & 0xFFFF) == 0xFFFF)) {
+        return ESP_ERR_FLASH_UNSUPPORTED_CHIP;
+    }
+
+    uint32_t mem_density = (id & 0xFF);
+    if (mem_density > 0x30) { // For OPI chips
+        mem_density -= 0x20;
+    }
+
+    *size = (mem_density <= 31) ? (1U << mem_density) : 0;
+    return ESP_OK;
+}
+
 esp_err_t spi_flash_chip_issi_set_io_mode(esp_flash_t *chip);
 esp_err_t spi_flash_chip_issi_get_io_mode(esp_flash_t *chip, esp_flash_io_mode_t* out_io_mode);
 
@@ -61,7 +81,7 @@ const spi_flash_chip_t esp_flash_chip_mxic = {
     .timeout = &spi_flash_chip_generic_timeout,
     .probe = spi_flash_chip_mxic_probe,
     .reset = spi_flash_chip_generic_reset,
-    .detect_size = spi_flash_chip_generic_detect_size,
+    .detect_size = spi_flash_chip_mxic_detect_size,
     .erase_chip = spi_flash_chip_generic_erase_chip,
     .erase_sector = spi_flash_chip_generic_erase_sector,
     .erase_block = spi_flash_chip_generic_erase_block,

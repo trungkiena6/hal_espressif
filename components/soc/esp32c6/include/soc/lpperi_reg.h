@@ -140,10 +140,10 @@ extern "C" {
 /** LPPERI_RND_DATA : RO; bitpos: [31:0]; default: 0;
  *  need_des
  */
-#define LPPERI_RND_DATA    0xFFFFFFFFU
-#define LPPERI_RND_DATA_M  (LPPERI_RND_DATA_V << LPPERI_RND_DATA_S)
-#define LPPERI_RND_DATA_V  0xFFFFFFFFU
-#define LPPERI_RND_DATA_S  0
+#define LPPERI_RNG_DATA    0xFFFFFFFFU
+#define LPPERI_RNG_DATA_M  (LPPERI_RNG_DATA_V << LPPERI_RNG_DATA_S)
+#define LPPERI_RNG_DATA_V  0xFFFFFFFFU
+#define LPPERI_RNG_DATA_S  0
 
 /** LPPERI_CPU_REG register
  *  need_des

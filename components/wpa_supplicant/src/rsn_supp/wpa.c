@@ -35,6 +35,7 @@
 #include "esp_common_i.h"
 #include "esp_owe_i.h"
 #include "common/sae.h"
+#include "esp_eap_client_i.h"
 
 /**
  * eapol_sm_notify_eap_success - Notification of external EAP success trigger
@@ -169,6 +170,7 @@ unsigned cipher_type_map_public_to_supp(wifi_cipher_type_t cipher)
     }
 }
 
+#ifdef CONFIG_ESP_WIFI_ENTERPRISE_SUPPORT
 static bool is_wpa2_enterprise_connection(void)
 {
     uint8_t authmode;
@@ -184,6 +186,7 @@ static bool is_wpa2_enterprise_connection(void)
 
     return false;
 }
+#endif
 
 /**
  * get_bssid - Get the current BSSID
@@ -504,7 +507,7 @@ static int wpa_supplicant_get_pmk(struct wpa_sm *sm,
         if (buf) {
             wpa_sm_ether_send(sm, sm->bssid, ETH_P_EAPOL,
                       buf, buflen);
-            os_free(buf);
+            wpa_sm_free_eapol(buf);
             return -2;
         }
 
@@ -653,6 +656,17 @@ void wpa_supplicant_process_1_of_4(struct wpa_sm *sm,
     u8 *kde, *kde_buf = NULL;
     size_t kde_len;
 
+#ifdef CONFIG_ESP_WIFI_ENTERPRISE_SUPPORT
+    if (is_wpa2_enterprise_connection()) {
+        wpa2_ent_eap_state_t state = eap_client_get_eap_state();
+        if (state == WPA2_ENT_EAP_STATE_IN_PROGRESS) {
+            wpa_printf(MSG_INFO, "EAP Success has not been processed yet."
+               " Drop EAPOL message.");
+            return;
+        }
+    }
+#endif
+
     wpa_sm_set_state(WPA_FIRST_HALF_4WAY_HANDSHAKE);
 
     wpa_printf(MSG_DEBUG, "WPA 1/4-Way Handshake");
@@ -680,9 +694,11 @@ void wpa_supplicant_process_1_of_4(struct wpa_sm *sm,
     if (res)
         goto failed;
 
+#ifdef CONFIG_ESP_WIFI_ENTERPRISE_SUPPORT
     if (is_wpa2_enterprise_connection()) {
         pmksa_cache_set_current(sm, NULL, sm->bssid, 0, 0);
     }
+#endif
 
     if (sm->renew_snonce) {
         if (os_get_random(sm->snonce, WPA_NONCE_LEN)) {
@@ -996,37 +1012,37 @@ int wpa_supplicant_pairwise_gtk(struct wpa_sm *sm,
 static int wpa_supplicant_install_igtk(struct wpa_sm *sm,
                       const wifi_wpa_igtk_t *igtk)
 {
-   size_t len = wpa_cipher_key_len(sm->mgmt_group_cipher);
-   u16 keyidx = WPA_GET_LE16(igtk->keyid);
+    size_t len = wpa_cipher_key_len(sm->mgmt_group_cipher);
+    u16 keyidx = WPA_GET_LE16(igtk->keyid);
 
-   /* Detect possible key reinstallation */
-   if (sm->igtk.igtk_len == len &&
-       os_memcmp(sm->igtk.igtk, igtk->igtk, sm->igtk.igtk_len) == 0) {
-       wpa_printf(MSG_DEBUG,
-           "WPA: Not reinstalling already in-use IGTK to the driver (keyidx=%d)",
-           keyidx);
-       return  0;
-   }
+    /* Detect possible key reinstallation */
+    if (sm->igtk.igtk_len == len &&
+        os_memcmp(sm->igtk.igtk, igtk->igtk, sm->igtk.igtk_len) == 0) {
+        wpa_printf(MSG_DEBUG,
+            "WPA: Not reinstalling already in-use IGTK to the driver (keyidx=%d)",
+            keyidx);
+        return  0;
+    }
 
-   wpa_printf(MSG_DEBUG,
-       "WPA: IGTK keyid %d pn %02x%02x%02x%02x%02x%02x",
-       keyidx, MAC2STR(igtk->pn));
-   wpa_hexdump_key(MSG_DEBUG, "WPA: IGTK", igtk->igtk, len);
-   if (keyidx > 4095) {
-       wpa_printf(MSG_WARNING,
-           "WPA: Invalid IGTK KeyID %d", keyidx);
-       return -1;
-   }
-   if (esp_wifi_set_igtk_internal(WIFI_IF_STA, igtk) < 0) {
-       wpa_printf(MSG_WARNING,
-           "WPA: Failed to configure IGTK to the driver");
-           return -1;
-   }
+    wpa_printf(MSG_DEBUG,
+        "WPA: IGTK keyid %d pn %02x%02x%02x%02x%02x%02x",
+        keyidx, MAC2STR(igtk->pn));
+    wpa_hexdump_key(MSG_DEBUG, "WPA: IGTK", igtk->igtk, len);
 
-   sm->igtk.igtk_len = len;
-   os_memcpy(sm->igtk.igtk, igtk->igtk, sm->igtk.igtk_len);
+    if (esp_wifi_set_igtk_internal(WIFI_IF_STA, igtk) < 0) {
+        if (keyidx > 4095) {
+            wpa_printf(MSG_WARNING,
+                "WPA: Invalid IGTK KeyID %d", keyidx);
+        }
+        wpa_printf(MSG_WARNING,
+            "WPA: Failed to configure IGTK to the driver");
+        return -1;
+    }
 
-   return 0;
+    sm->igtk.igtk_len = len;
+    os_memcpy(sm->igtk.igtk, igtk->igtk, sm->igtk.igtk_len);
+
+    return 0;
 }
 #endif /* CONFIG_IEEE80211W */
 
@@ -2614,30 +2630,48 @@ int wpa_michael_mic_failure(u16 isunicast)
    eapol tx callback function to make sure new key
     install after 4-way handoff
 */
-void eapol_txcb(void *eb)
+void eapol_txcb(uint8_t *eapol_payload, size_t len, bool tx_failure)
 {
+    struct ieee802_1x_hdr *hdr;
+    struct wpa_eapol_key *key;
     struct wpa_sm *sm = &gWpaSm;
     u8 isdeauth = 0;  //no_zero value is the reason for deauth
 
-    if (false == esp_wifi_sta_is_running_internal()){
+    if (len < sizeof(struct ieee802_1x_hdr)) {
+        /* Invalid 802.1X header, ignore */
         return;
     }
+    hdr = (struct ieee802_1x_hdr *) eapol_payload;
+    if (hdr->type != IEEE802_1X_TYPE_EAPOL_KEY) {
+        /* Ignore EAPOL non-key frames */
+        return;
+    }
+    if (len < (sizeof(struct ieee802_1x_hdr) + sizeof(struct wpa_eapol_key))) {
+        wpa_printf(MSG_ERROR, "EAPOL TxDone with invalid payload len! (len - %zu)", len);
+        return;
+    }
+    key = (struct wpa_eapol_key *) (hdr + 1);
 
     switch(WPA_SM_STATE(sm)) {
         case WPA_FIRST_HALF_4WAY_HANDSHAKE:
-            break;
         case WPA_LAST_HALF_4WAY_HANDSHAKE:
+            if (WPA_GET_BE16(key->key_data_length) == 0 ||
+                    (WPA_GET_BE16(key->key_info) & WPA_KEY_INFO_SECURE)) {
+                /* msg 4/4 Tx Done */
+                if (tx_failure) {
+                    wpa_printf(MSG_ERROR, "Eapol message 4/4 tx failure, not installing keys");
+                    return;
+                }
 
-            if (esp_wifi_eb_tx_status_success_internal(eb) != true) {
-                wpa_printf(MSG_ERROR, "Eapol message 4/4 tx failure, not installing keys");
-                return;
-            }
-
-            if (sm->txcb_flags & WPA_4_4_HANDSHAKE_BIT) {
-                sm->txcb_flags &= ~WPA_4_4_HANDSHAKE_BIT;
-                isdeauth = wpa_supplicant_send_4_of_4_txcallback(sm);
+                if (sm->txcb_flags & WPA_4_4_HANDSHAKE_BIT) {
+                    sm->txcb_flags &= ~WPA_4_4_HANDSHAKE_BIT;
+                    isdeauth = wpa_supplicant_send_4_of_4_txcallback(sm);
+                } else {
+                    wpa_printf(MSG_DEBUG, "4/4 txcb, flags=%d", sm->txcb_flags);
+                }
             } else {
-                wpa_printf(MSG_DEBUG, "4/4 txcb, flags=%d", sm->txcb_flags);
+                /* msg 2/4 Tx Done */
+                wpa_printf(MSG_DEBUG, "2/4 txcb, flags=%d, txfail %d", sm->txcb_flags, tx_failure);
             }
             break;
         case WPA_GROUP_HANDSHAKE:
@@ -2714,14 +2748,16 @@ int wpa_sm_set_ap_rsnxe(const u8 *ie, size_t len)
         sm->ap_rsnxe_len = len;
     }
 
-    sm->sae_pwe = esp_wifi_get_config_sae_pwe_h2e_internal(WIFI_IF_STA);
+    if (sm->ap_rsnxe != NULL) {
+        sm->sae_pwe = esp_wifi_get_config_sae_pwe_h2e_internal(WIFI_IF_STA);
 #ifdef CONFIG_SAE_PK
-    const u8 *pw = (const u8 *)esp_wifi_sta_get_prof_password_internal();
-    if (esp_wifi_sta_get_config_sae_pk_internal() != WPA3_SAE_PK_MODE_DISABLED &&
-            sae_pk_valid_password((const char*)pw)) {
-        sm->sae_pk = true;
-    }
+        const u8 *pw = (const u8 *)esp_wifi_sta_get_prof_password_internal();
+        if (esp_wifi_sta_get_config_sae_pk_internal() != WPA3_SAE_PK_MODE_DISABLED &&
+                sae_pk_valid_password((const char*)pw)) {
+            sm->sae_pk = true;
+        }
 #endif /* CONFIG_SAE_PK */
+    }
     return 0;
 }
 

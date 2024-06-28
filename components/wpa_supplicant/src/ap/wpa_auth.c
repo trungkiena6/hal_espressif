@@ -217,10 +217,10 @@ int wpa_auth_for_each_sta(struct wpa_authenticator *wpa_auth,
 }
 
 static void wpa_sta_disconnect(struct wpa_authenticator *wpa_auth,
-                   const u8 *addr)
+                   const u8 *addr, u16 reason)
 {
     wpa_printf(MSG_DEBUG, "wpa_sta_disconnect STA " MACSTR, MAC2STR(addr));
-    esp_wifi_ap_deauth_internal((uint8_t*)addr, WLAN_REASON_4WAY_HANDSHAKE_TIMEOUT);
+    esp_wifi_ap_deauth_internal((uint8_t*)addr, reason);
     return;
 }
 
@@ -488,6 +488,7 @@ static void wpa_free_sta_sm(struct wpa_state_machine *sm)
     wpa_printf( MSG_DEBUG, "wpa_free_sta_sm: free eapol=%p\n", sm->last_rx_eapol_key);
     os_free(sm->last_rx_eapol_key);
     os_free(sm->wpa_ie);
+    os_free(sm->rsnxe);
     os_free(sm);
 }
 
@@ -796,7 +797,8 @@ continue_processing:
                    "collect more entropy for random number "
                    "generation");
             random_mark_pool_ready();
-            wpa_sta_disconnect(wpa_auth, sm->addr);
+            wpa_sta_disconnect(wpa_auth, sm->addr,
+                    WLAN_REASON_PREV_AUTH_NOT_VALID);
             return;
         }
         if (wpa_parse_kde_ies((u8 *) (key + 1), key_data_length,
@@ -823,12 +825,14 @@ continue_processing:
             wpa_hexdump(MSG_DEBUG, "WPA IE in msg 2/4",
                     eapol_key_ie, eapol_key_ie_len);
             /* MLME-DEAUTHENTICATE.request */
-            wpa_sta_disconnect(wpa_auth, sm->addr);
+            wpa_sta_disconnect(wpa_auth, sm->addr,
+                    WLAN_REASON_PREV_AUTH_NOT_VALID);
             return;
         }
 #ifdef CONFIG_IEEE80211R_AP
         if (ft && ft_check_msg_2_of_4(wpa_auth, sm, &kde) < 0) {
-            wpa_sta_disconnect(wpa_auth, sm->addr);
+            wpa_sta_disconnect(wpa_auth, sm->addr,
+                    WLAN_REASON_PREV_AUTH_NOT_VALID);
             return;
         }
 #endif /* CONFIG_IEEE80211R_AP */
@@ -862,6 +866,8 @@ continue_processing:
     if (sm->PTK_valid && !sm->update_snonce) {
         if (wpa_verify_key_mic(sm->wpa_key_mgmt, &sm->PTK, data,
                        data_len)) {
+            wpa_printf(MSG_INFO,
+                     "received EAPOL-Key with invalid MIC");
             return;
         }
         sm->MICVerified = TRUE;
@@ -875,6 +881,8 @@ continue_processing:
             memcpy(sm->req_replay_counter, key->replay_counter,
                   WPA_REPLAY_COUNTER_LEN);
         } else {
+            wpa_printf(MSG_INFO,
+                     "received EAPOL-Key request with invalid MIC");
             return;
         }
 
@@ -1358,9 +1366,14 @@ SM_STATE(WPA_PTK, INITIALIZE)
 
 SM_STATE(WPA_PTK, DISCONNECT)
 {
+    u16 reason = sm->disconnect_reason;
+
     SM_ENTRY_MA(WPA_PTK, DISCONNECT, wpa_ptk);
     sm->Disconnect = FALSE;
-    wpa_sta_disconnect(sm->wpa_auth, sm->addr);
+    sm->disconnect_reason = 0;
+    if (!reason)
+        reason = WLAN_REASON_PREV_AUTH_NOT_VALID;
+    wpa_sta_disconnect(sm->wpa_auth, sm->addr, reason);
 }
 
 
@@ -1430,7 +1443,7 @@ SM_STATE(WPA_PTK, AUTHENTICATION2)
     if (os_get_random(sm->ANonce, WPA_NONCE_LEN)) {
         wpa_printf( MSG_ERROR, "WPA: Failed to get random data for "
                "ANonce.");
-        wpa_sta_disconnect(sm->wpa_auth, sm->addr);
+        sm->Disconnect = true;
         return;
     }
     wpa_hexdump(MSG_DEBUG, "WPA: Assign ANonce", sm->ANonce,
@@ -1659,6 +1672,7 @@ SM_STATE(WPA_PTK, PTKCALCNEGOTIATING)
     }
 
     if (!ok) {
+        wpa_printf(MSG_INFO, "invalid MIC in msg 2/4 of 4-Way Handshake");
         return;
     }
 
@@ -1704,7 +1718,8 @@ SM_STATE(WPA_PTK, PTKCALCNEGOTIATING)
                 sm->rsnxe, sm->rsnxe_len);
         wpa_hexdump(MSG_DEBUG, "RSNXE in EAPOL-Key msg 2/4",
                 kde.rsnxe, kde.rsnxe_len);
-        wpa_sta_disconnect(sm->wpa_auth, sm->addr);
+        wpa_sta_disconnect(sm->wpa_auth, sm->addr,
+                WLAN_REASON_PREV_AUTH_NOT_VALID);
         return;
     }
 
@@ -1949,7 +1964,8 @@ SM_STATE(WPA_PTK, PTKINITDONE)
         int klen = wpa_cipher_key_len(sm->pairwise);
         if (wpa_auth_set_key(sm->wpa_auth, 0, alg, sm->addr, 0,
                      sm->PTK.tk, klen)) {
-            wpa_sta_disconnect(sm->wpa_auth, sm->addr);
+            wpa_sta_disconnect(sm->wpa_auth, sm->addr,
+                    WLAN_REASON_PREV_AUTH_NOT_VALID);
             return;
         }
         /* FIX: MLME-SetProtection.Request(TA, Tx_Rx) */
@@ -2061,6 +2077,8 @@ SM_STEP(WPA_PTK)
             SM_ENTER(WPA_PTK, PTKCALCNEGOTIATING);
         else if (sm->TimeoutCtr >
              (int) dot11RSNAConfigPairwiseUpdateCount) {
+            sm->disconnect_reason =
+                WLAN_REASON_4WAY_HANDSHAKE_TIMEOUT;
             SM_ENTER(WPA_PTK, DISCONNECT);
         } else if (sm->TimeoutEvt)
             SM_ENTER(WPA_PTK, PTKSTART);
@@ -2085,6 +2103,8 @@ SM_STEP(WPA_PTK)
             SM_ENTER(WPA_PTK, PTKINITDONE);
         else if (sm->TimeoutCtr >
              (int) dot11RSNAConfigPairwiseUpdateCount) {
+            sm->disconnect_reason =
+                WLAN_REASON_4WAY_HANDSHAKE_TIMEOUT;
             SM_ENTER(WPA_PTK, DISCONNECT);
         } else if (sm->TimeoutEvt)
             SM_ENTER(WPA_PTK, PTKINITNEGOTIATING);
@@ -2190,6 +2210,7 @@ SM_STATE(WPA_PTK_GROUP, KEYERROR)
         sm->group->GKeyDoneStations--;
     sm->GUpdateStationKeys = FALSE;
     sm->Disconnect = TRUE;
+    sm->disconnect_reason = WLAN_REASON_GROUP_KEY_UPDATE_TIMEOUT;
 }
 
 
@@ -2583,7 +2604,7 @@ send_resp:
                 omit_rsnxe = true;
             }
 
-            if (esp_send_assoc_resp(hapd, sta, bssid, resp, omit_rsnxe, subtype) != WLAN_STATUS_SUCCESS) {
+            if (esp_send_assoc_resp(hapd, bssid, resp, omit_rsnxe, subtype) != WLAN_STATUS_SUCCESS) {
                 resp = WLAN_STATUS_AP_UNABLE_TO_HANDLE_NEW_STA;
             }
 

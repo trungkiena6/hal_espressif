@@ -104,7 +104,7 @@ typedef union {
         /** rnd_data : RO; bitpos: [31:0]; default: 0;
          *  need_des
          */
-        uint32_t rnd_data:32;
+        uint32_t rng_data:32;
     };
     uint32_t val;
 } lpperi_rng_data_reg_t;
